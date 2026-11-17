@@ -24,7 +24,7 @@ jobs:
           API_PASSWORD: ${{ secrets.API_PASSWORD }}   # only OKX needs this
           TESTNET: "1"                 # 1 = fake money. Change to 0 only after weeks of testing
           EXCHANGE: okx            # binance | bybit | okx | mexc
-          DATA_EXCHANGE: binance       # candle source; try binanceus if blocked
+          DATA_EXCHANGE: binanceus       # candle source; try binanceus if blocked
           SYMBOL: BTC/USDT
           BASE_USD: "10"
           NEWS_GUARD: "1"
