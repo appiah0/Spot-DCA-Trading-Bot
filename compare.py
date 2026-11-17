@@ -1,4 +1,5 @@
 """Compare settings on BTC and ETH. Run in Colab: python compare.py"""
+import pandas as pd
 from strategy import CFG, make_exchange
 import backtest
 
@@ -15,7 +16,10 @@ VARIANTS = {
 ex = make_exchange(CFG["data_exchange"])
 base = dict(CFG)
 for sym in SYMBOLS:
-    parts = backtest.split(backtest.load(ex, sym, DAYS))
+    full = backtest.load(ex, sym, DAYS)
+    d0, d1 = (pd.to_datetime(full["ts"].iloc[i], unit="ms").date() for i in (0, -1))
+    print(f"\n##### {sym}: {len(full)} candles, {d0} to {d1} #####")
+    parts = backtest.split(full)
     for vname, over in VARIANTS.items():
         CFG.update(base)
         CFG.update(over)
