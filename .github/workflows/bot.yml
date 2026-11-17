@@ -3,9 +3,23 @@ on:
   schedule:
     - cron: "5 * * * *"      # hourly; the strategy uses 4h candles so this is plenty
   workflow_dispatch:
+    inputs:
+      action:
+        description: "auto = normal run, buy/sell = manual trade"
+        type: choice
+        default: auto
+        options: [auto, buy, sell]
+      symbol:
+        description: "Coin pair for a manual trade, e.g. BTC/USDT"
+        default: BTC/USDT
+      usd:
+        description: "Amount in USD for a manual trade"
+        default: "10"
 permissions:
   contents: write
-concurrency: dca-bot
+concurrency:
+  group: dca-bot
+  cancel-in-progress: false
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -22,13 +36,10 @@ jobs:
           API_KEY: ${{ secrets.API_KEY }}
           API_SECRET: ${{ secrets.API_SECRET }}
           API_PASSWORD: ${{ secrets.API_PASSWORD }}   # only OKX needs this
-          TESTNET: "1"                 # 1 = fake money. Change to 0 only after weeks of testing
-          EXCHANGE: okx            # binance | bybit | okx | mexc
-          DATA_EXCHANGE: okx      # candle source; try binanceus if blocked
-          SYMBOL: BTC/USDT
-          BASE_USD: "10"
-          NEWS_GUARD: "1"
-          USE_FNG: "0"                 # set 1 only if the backtest shows it helps
+          BOT_CONFIG: ${{ vars.BOT_CONFIG }}          # settings, edited by the web app
+          MANUAL_ACTION: ${{ github.event.inputs.action }}
+          MANUAL_SYMBOL: ${{ github.event.inputs.symbol }}
+          MANUAL_USD: ${{ github.event.inputs.usd }}
       - name: save state
         run: |
           git config user.name "dca-bot"
