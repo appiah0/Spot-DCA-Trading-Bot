@@ -10,10 +10,13 @@ STATE = "state.json"
 FEEDS = ["https://cointelegraph.com/rss", "https://www.coindesk.com/arc/outboundfeeds/rss/"]
 RISK_WORDS = ["hack", "exploit", "bankrupt", "insolven", "halts withdrawal", "suspends withdrawal",
               "delist", "crackdown", "depeg", "rug pull"]
+# a headline must ALSO mention something that matters to this bot, so unrelated hacking news is ignored
+SUBJECT_WORDS = ["bitcoin", "btc", "ethereum", "binance", "bybit", "okx", "mexc", "coinbase",
+                 "tether", "usdt", "usdc", "stablecoin"]
 
 
-def news_risk(max_age_h=12):
-    """Headlines from the last 12h containing danger words. A safety brake, not a predictor."""
+def news_risk(max_age_h=6):
+    """Recent headlines with a danger word AND a market/exchange name. A safety brake, not a predictor."""
     hits = []
     for url in FEEDS:
         try:
@@ -22,7 +25,9 @@ def news_risk(max_age_h=12):
             for it in root.iter("item"):
                 title = (it.findtext("title") or "")
                 age = time.time() - parsedate_to_datetime(it.findtext("pubDate")).timestamp()
-                if age < max_age_h * 3600 and any(w in title.lower() for w in RISK_WORDS):
+                t = title.lower()
+                if (age < max_age_h * 3600 and any(w in t for w in RISK_WORDS)
+                        and any(w in t for w in SUBJECT_WORDS)):
                     hits.append(title)
         except Exception as e:
             print("news feed unavailable:", url, e)
