@@ -1,7 +1,7 @@
 name: dca-bot
 on:
   schedule:
-    - cron: "5 * * * *"      # hourly; strategy uses 4h candles so this is plenty
+    - cron: "5 * * * *"      # hourly; the strategy uses 4h candles so this is plenty
   workflow_dispatch:
 permissions:
   contents: write
@@ -21,11 +21,14 @@ jobs:
         env:
           API_KEY: ${{ secrets.API_KEY }}
           API_SECRET: ${{ secrets.API_SECRET }}
-          TESTNET: "1"
-          EXCHANGE: binance
-          DATA_EXCHANGE: binance
+          API_PASSWORD: ${{ secrets.API_PASSWORD }}   # only OKX needs this
+          TESTNET: "1"                 # 1 = fake money. Change to 0 only after weeks of testing
+          EXCHANGE: binance            # binance | bybit | okx | mexc
+          DATA_EXCHANGE: binance       # candle source; try binanceus if blocked
           SYMBOL: BTC/USDT
           BASE_USD: "10"
+          NEWS_GUARD: "1"
+          USE_FNG: "0"                 # set 1 only if the backtest shows it helps
       - name: save state
         run: |
           git config user.name "dca-bot"
