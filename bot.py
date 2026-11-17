@@ -8,11 +8,9 @@ from strategy import (CFG, SUPPORTED, TF_HOURS, make_exchange, fetch_candles, fe
 
 STATE = "state.json"
 FEEDS = ["https://cointelegraph.com/rss", "https://www.coindesk.com/arc/outboundfeeds/rss/"]
-RISK_WORDS = ["hack", "exploit", "bankrupt", "insolven", "halts withdrawal", "suspends withdrawal",
-              "delist", "crackdown", "depeg", "rug pull"]
-# a headline must ALSO mention something that matters to this bot, so unrelated hacking news is ignored
-SUBJECT_WORDS = ["bitcoin", "btc", "ethereum", "binance", "bybit", "okx", "mexc", "coinbase",
-                 "tether", "usdt", "usdc", "stablecoin"]
+RISK_WORDS = ["hacked", "exploited", "bankrupt", "insolven", "halts withdrawal", "suspends withdrawal",
+              "delist", "depeg", "rug pull"]
+# a headline must ALSO mention the exchange we trade on, Bitcoin or a major stablecoin
 
 
 def news_risk(max_age_h=6):
@@ -27,7 +25,7 @@ def news_risk(max_age_h=6):
                 age = time.time() - parsedate_to_datetime(it.findtext("pubDate")).timestamp()
                 t = title.lower()
                 if (age < max_age_h * 3600 and any(w in t for w in RISK_WORDS)
-                        and any(w in t for w in SUBJECT_WORDS)):
+                        and any(w in t for w in [CFG["exchange"], "bitcoin", "btc", "tether", "usdt", "usdc", "stablecoin"])):
                     hits.append(title)
         except Exception as e:
             print("news feed unavailable:", url, e)
@@ -49,13 +47,26 @@ def main():
     pub = make_exchange(CFG["data_exchange"])
     tf_ms = TF_HOURS[CFG["timeframe"]] * 3600 * 1000
     since = int(time.time() * 1000) - 1200 * tf_ms
-    df = add_indicators(fetch_candles(pub, sym, CFG["timeframe"], since, 1000, 3))
+    df = add_indicators(fetch_candles(pub, sym, CFG["timeframe"], since, 1000, 15))
     df = add_fng(df, fetch_fng() if CFG["use_fng"] else {})
     r = df.iloc[-2]                                   # last CLOSED candle
     price = float(r["close"])
     print(f"{sym} price={price:.2f} rsi={r['rsi']:.1f} adx={r['adx']:.0f} macd_hist={r['macd_hist']:.2f} "
           f"bb%={r['bb_pct']:.2f} vol_ratio={r['vol_ratio']:.2f} dd_from_high={r['dd_high']*100:.0f}% "
           f"above_ema200={price > r['ema200']} fng={r.get('fng')}")
+
+    if len(df) < 300:
+        print(f"Only {len(df)} candles from {CFG['data_exchange']}: not enough history. No trading.")
+        return
+    try:
+        live_px = float(make_exchange(name).fetch_ticker(sym)["last"])
+    except Exception as e:
+        print(f"Could not check the live price on {name} ({e}). No trading this run.")
+        return
+    if abs(live_px / price - 1) > 0.05:
+        print(f"PRICE MISMATCH: data feed {price:.2f} vs {name} live {live_px:.2f}. Data looks wrong, no trading.")
+        return
+    print(f"Price check OK: {name} live {live_px:.2f}, last closed candle {price:.2f}")
 
     key, sec, pw = os.getenv("API_KEY"), os.getenv("API_SECRET"), os.getenv("API_PASSWORD")
     testnet = os.getenv("TESTNET", "1") == "1"
