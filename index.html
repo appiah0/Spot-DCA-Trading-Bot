@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1d3fbb">
+<title>DCA bot control</title>
+<style>
+:root{--bg:#eef1f6;--card:#fff;--ink:#14213d;--mute:#5d6b86;--line:#d5dbe8;--acc:#2349c9;--accink:#fff;--ok:#16794c;--warn:#b25b00;--bad:#b3261e;--r:14px}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1630;--card:#16213f;--ink:#e8edfb;--mute:#93a2c4;--line:#2a3860;--acc:#7a9bff;--accink:#0e1630;--ok:#53d39a;--warn:#f0a64a;--bad:#ff8a80}}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top,0) 0 calc(76px + env(safe-area-inset-bottom,0))}
+main{max-width:560px;margin:0 auto;padding:16px}
+h1,h2{font-family:Georgia,"Iowan Old Style",serif;font-weight:700;letter-spacing:-.01em;margin:0}
+h1{font-size:28px;line-height:1.15}h2{font-size:20px;margin:22px 0 10px}
+.sub{color:var(--mute);margin:6px 0 0;font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin:10px 0}
+.row{display:flex;align-items:center;gap:10px;justify-content:space-between}
+.col{display:flex;flex-direction:column;gap:4px}
+.num{font-family:Georgia,serif;font-size:22px;font-variant-numeric:tabular-nums}
+.mute{color:var(--mute);font-size:13px}.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+label{display:block;font-size:14px;color:var(--mute);margin:12px 0 4px}
+input,select{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:11px}
+input[type=checkbox]{width:22px;height:22px;accent-color:var(--acc)}
+button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:12px 16px;background:var(--acc);color:var(--accink);cursor:pointer}
+button.ghost{background:transparent;color:var(--acc);border:1px solid var(--line)}
+button.danger{background:var(--bad);color:#fff}
+button:disabled{opacity:.5}
+button.full{width:100%;margin-top:14px}
+:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding:6px 6px calc(6px + env(safe-area-inset-bottom,0))}
+nav button{flex:1;background:transparent;color:var(--mute);padding:10px 4px;font-size:14px}
+nav button.on{color:var(--acc);box-shadow:inset 0 3px 0 var(--acc);border-radius:0 0 10px 10px}
+.seg{display:flex;gap:8px}.seg button{flex:1;background:var(--bg);color:var(--ink);border:1px solid var(--line)}
+.seg button.on.buy{background:var(--ok);color:#fff;border-color:var(--ok)}.seg button.on.sell{background:var(--bad);color:#fff;border-color:var(--bad)}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--mute);margin-right:8px}
+.toast{position:fixed;left:16px;right:16px;bottom:calc(86px + env(safe-area-inset-bottom,0));max-width:528px;margin:auto;background:var(--ink);color:var(--bg);padding:12px 14px;border-radius:12px;z-index:9}
+.hidden{display:none}details{margin-top:14px}summary{cursor:pointer;color:var(--acc);font-weight:600}
+@media (prefers-reduced-motion:no-preference){.toast{animation:up .2s ease-out}@keyframes up{from{transform:translateY(8px);opacity:0}}}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<nav id="nav" class="hidden"></nav>
+<div id="toast" class="toast hidden" role="status"></div>
+<script>
+const DEF={paused:false,exchange:"okx",data_exchange:"okx",testnet:true,interval_h:24,news_guard:true,use_fng:false,max_manual_usd:100,coins:[{symbol:"BTC/USDT",base_usd:10,enabled:true}],params:{}};
+const EX=["okx","binance","bybit","mexc"],PAR={hot_mult:"Size when RSI is above 70 in an uptrend (0 skips)",dip_boost:"Buy more near 180-day lows (1 on, 0 off)",tp_pct:"Sell only above average cost by (0.5 = 50%)",tp_ext:"and above the 200-EMA by (0.25 = 25%)",tp_frac:"Share of holdings to sell each time (0.15 = 15%)"};
+const PD={hot_mult:.5,dip_boost:1,tp_pct:.5,tp_ext:.25,tp_frac:.15};
+let S={repo:localStorage.repo||"appiah0/Spot-DCA-Trading-Bot",token:localStorage.token||""},cfg=null,st=null,runs=[],tab="home",dirty=false,side="buy",busy=false;
+const $=s=>document.querySelector(s),esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt=(n,d=2)=>Number(n).toLocaleString(undefined,{maximumFractionDigits:d});
+const ago=t=>{if(!t)return"never";const s=Date.now()/1000-t;return s<90?"just now":s<5400?Math.round(s/60)+" min ago":s<129600?Math.round(s/3600)+" h ago":Math.round(s/86400)+" days ago"};
+function toast(m,bad){const t=$("#toast");t.textContent=m;t.style.background=bad?"var(--bad)":"var(--ink)";t.classList.remove("hidden");clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.add("hidden"),5000)}
+async function gh(p,o={}){return fetch("https://api.github.com/repos/"+S.repo+p,{...o,headers:{Authorization:"Bearer "+S.token,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",...(o.headers||{})}})}
+async function load(){
+  try{
+    const a=await gh("/actions/variables/BOT_CONFIG");
+    if(a.status===401||a.status===403)throw new Error("The token was rejected. Check its permissions.");
+    cfg=a.ok?{...DEF,...JSON.parse((await a.json()).value)}:JSON.parse(JSON.stringify(DEF));cfg.params=cfg.params||{};
+    const b=await gh("/contents/state.json",{headers:{Accept:"application/vnd.github.raw+json"}});
+    st=b.ok?await b.json():{coins:{},history:[],last_run:0};
+    const c=await gh("/actions/runs?per_page=5");runs=c.ok?(await c.json()).workflow_runs:[];
+    dirty=false;return true;
+  }catch(e){toast(e.message||"Could not load. Check your connection.",1);return false}
+}
+async function saveCfg(){
+  const body=JSON.stringify({name:"BOT_CONFIG",value:JSON.stringify(cfg)});
+  let r=await gh("/actions/variables/BOT_CONFIG",{method:"PATCH",body});
+  if(r.status===404)r=await gh("/actions/variables",{method:"POST",body});
+  if(r.ok){dirty=false;toast("Settings saved. The bot uses them on its next run.");render()}else toast("Save failed ("+r.status+"). The token needs Variables: read and write.",1);
+}
+async function dispatch(inputs){
+  const r=await gh("/actions/workflows/bot.yml/dispatches",{method:"POST",body:JSON.stringify({ref:"main",inputs})});
+  if(r.ok)toast("Requested. The run takes about a minute. Pull to refresh on Home after that.");else toast("Could not start the run ("+r.status+"). The token needs Actions: read and write.",1);
+}
+function connect(){
+  $("#nav").classList.add("hidden");
+  $("#app").innerHTML=`<h1>Connect your bot</h1><p class="sub">Your exchange keys never come to this page. It only talks to your GitHub repo.</p>
+  <label for="rp">Repository</label><input id="rp" value="${esc(S.repo)}" autocapitalize="none">
+  <label for="tk">GitHub token</label><input id="tk" type="password" value="${esc(S.token)}" autocomplete="off" autocapitalize="none">
+  <details><summary>How to create the token</summary><p class="sub">GitHub, Settings, Developer settings, Fine-grained tokens, Generate new token. Pick only this repository. Give it these repository permissions: Actions (read and write), Variables (read and write), Contents (read only). Do not add anything else. The token is saved in this browser only.</p></details>
+  <button class="full" id="go">Connect</button>`;
+  $("#go").onclick=async()=>{S.repo=$("#rp").value.trim();S.token=$("#tk").value.trim();if(!S.repo||!S.token)return toast("Enter both fields.",1);
+    $("#go").disabled=true;if(await load()){localStorage.repo=S.repo;localStorage.token=S.token;render()}else $("#go").disabled=false};
+}
+function nav(){const T=[["home","Home"],["coins","Coins"],["trade","Trade"],["set","Settings"]];const n=$("#nav");n.classList.remove("hidden");
+  n.innerHTML=T.map(([k,l])=>`<button data-t="${k}" class="${tab===k?"on":""}">${l}</button>`).join("");
+  n.querySelectorAll("button").forEach(b=>b.onclick=()=>{tab=b.dataset.t;render()})}
+function render(){if(!cfg)return connect();nav();({home,coins,trade,set})[tab]();window.scrollTo(0,0)}
+function modeLine(){return cfg.paused?`<span class="warn">Buying is paused</span>`:cfg.testnet?`Running on demo money`:`<span class="bad">Running with real money</span>`}
+function home(){
+  const rows=Object.entries(st.coins||{}).map(([s,c])=>{const avg=c.qty>0?c.cost/c.qty:0;
+    return `<div class="card"><div class="row"><strong>${esc(s)}</strong><span class="mute">budget left $${fmt(c.pool)}</span></div>
+    <div class="row" style="margin-top:8px"><div class="col"><span class="num">${fmt(c.qty,6)}</span><span class="mute">bot holdings</span></div>
+    <div class="col" style="text-align:right"><span class="num">$${fmt(avg)}</span><span class="mute">average cost</span></div></div></div>`}).join("")||`<div class="card mute">No trades yet. The bot checks every hour and buys when its rules say so.</div>`;
+  const hist=(st.history||[]).slice(-8).reverse().map(h=>`<div class="row" style="padding:8px 0;border-top:1px solid var(--line)"><div class="col"><span><strong class="${h.side==="buy"?"ok":"bad"}">${h.side}</strong> ${esc(h.symbol)}</span><span class="mute">${ago(h.t)}, ${esc(h.mode)}${h.note?", "+esc(h.note):""}</span></div><span class="num" style="font-size:17px">$${fmt(h.usd)}</span></div>`).join("");
+  const rn=runs.map(r=>`<div class="row" style="padding:6px 0"><span><span class="dot" style="background:var(${r.status!=="completed"?"--warn":r.conclusion==="success"?"--ok":"--bad"})"></span>${r.status!=="completed"?"running":r.conclusion}</span><span class="mute">${ago(Date.parse(r.created_at)/1000)}</span></div>`).join("");
+  $("#app").innerHTML=`<h1>${modeLine()}</h1><p class="sub">Last bot check ${ago(st.last_run)} on ${esc(cfg.exchange)}</p>
+  <div class="row" style="margin-top:14px;gap:8px"><button class="${cfg.paused?"":"ghost"}" style="flex:1" id="pz">${cfg.paused?"Resume bot":"Pause bot"}</button><button class="ghost" style="flex:1" id="rf">Refresh</button></div>
+  <button class="ghost full" id="rn" style="margin-top:8px">Run the bot now</button>
+  <h2>Holdings</h2>${rows}<h2>Recent trades</h2><div class="card" style="padding:4px 14px">${hist||`<p class="mute">Nothing yet.</p>`}</div>
+  <h2>Recent runs</h2><div class="card">${rn||`<span class="mute">No runs yet.</span>`}</div>`;
+  $("#pz").onclick=async()=>{cfg.paused=!cfg.paused;await saveCfg()};
+  $("#rf").onclick=async()=>{if(await load())render();toast("Updated.")};
+  $("#rn").onclick=()=>dispatch({action:"auto",symbol:"BTC/USDT",usd:"10"});
+}
+function coins(){
+  $("#app").innerHTML=`<h1>Coins</h1><p class="sub">The bot trades every enabled coin with its own budget. Prices are in USDT or USDC.</p>
+  ${cfg.coins.map((c,i)=>`<div class="card"><div class="row"><strong>${esc(c.symbol)}</strong><label class="row" style="margin:0;gap:8px;color:var(--ink)">On<input type="checkbox" data-i="${i}" class="en" ${c.enabled?"checked":""}></label></div>
+  <label for="b${i}">Budget added each period (USD)</label><input id="b${i}" type="number" min="1" step="1" inputmode="decimal" data-i="${i}" class="bu" value="${c.base_usd}">
+  <button class="ghost rm" data-i="${i}" style="margin-top:10px">Remove</button></div>`).join("")}
+  <label for="ns">Add a coin</label><div class="row"><input id="ns" placeholder="SOL/USDT" autocapitalize="characters"><button id="ad">Add</button></div>
+  <button class="full" id="sv" ${dirty?"":"disabled"}>Save coins</button>`;
+  const d=()=>{dirty=true;$("#sv").disabled=false};
+  document.querySelectorAll(".en").forEach(e=>e.onchange=()=>{cfg.coins[e.dataset.i].enabled=e.checked;d()});
+  document.querySelectorAll(".bu").forEach(e=>e.oninput=()=>{cfg.coins[e.dataset.i].base_usd=Math.max(1,+e.value||1);d()});
+  document.querySelectorAll(".rm").forEach(e=>e.onclick=()=>{cfg.coins.splice(e.dataset.i,1);dirty=true;coins()});
+  $("#ad").onclick=()=>{const s=$("#ns").value.trim().toUpperCase();if(!/^[A-Z0-9]{2,12}\/(USDT|USDC)$/.test(s))return toast("Use the form BTC/USDT.",1);
+    if(cfg.coins.some(c=>c.symbol===s))return toast(s+" is already in the list.",1);cfg.coins.push({symbol:s,base_usd:10,enabled:true});dirty=true;coins()};
+  $("#sv").onclick=saveCfg;
+}
+function trade(){
+  const list=cfg.coins.map(c=>c.symbol),demo=cfg.testnet;
+  $("#app").innerHTML=`<h1>Place a trade</h1><p class="sub">${demo?"Demo money, no real funds.":"<span class='bad'>Real money. Orders are real.</span>"} Limit per trade: $${fmt(cfg.max_manual_usd)}.</p>
+  <label for="cs">Coin</label><select id="cs">${list.map(s=>`<option>${esc(s)}</option>`).join("")}</select>
+  <label>Side</label><div class="seg"><button data-s="buy" class="buy ${side==="buy"?"on":""}">Buy</button><button data-s="sell" class="sell ${side==="sell"?"on":""}">Sell</button></div>
+  <label for="am">Amount (USD)</label><input id="am" type="number" min="1" inputmode="decimal" value="10">
+  <button class="full ${side==="sell"?"danger":""}" id="pl">Place ${demo?"demo ":"live "}${side} order</button>
+  <p class="mute">The order runs on GitHub, so it takes about a minute. It uses the market price and appears under Recent trades.</p>`;
+  document.querySelectorAll(".seg button").forEach(b=>b.onclick=()=>{side=b.dataset.s;trade()});
+  $("#pl").onclick=()=>{const u=+$("#am").value,s=$("#cs").value;if(!(u>0&&u<=cfg.max_manual_usd))return toast("Amount must be between 1 and "+cfg.max_manual_usd+".",1);
+    if(!confirm(`${demo?"Demo":"LIVE"} ${side} about $${u} of ${s} on ${cfg.exchange}?`))return;dispatch({action:side,symbol:s,usd:String(u)})};
+}
+function set(){
+  const o=a=>a.map(x=>`<option ${x===cfg.exchange?"selected":""}>${x}</option>`).join("");
+  $("#app").innerHTML=`<h1>Settings</h1><p class="sub">Saved to your repo. The bot reads them every run.</p>
+  <label for="ex">Trade on</label><select id="ex">${o(EX)}</select>
+  <label for="dx">Price data from</label><select id="dx">${EX.map(x=>`<option ${x===cfg.data_exchange?"selected":""}>${x}</option>`).join("")}<option ${cfg.data_exchange==="binanceus"?"selected":""}>binanceus</option></select>
+  <label for="md">Money</label><select id="md"><option value="1" ${cfg.testnet?"selected":""}>Demo (fake funds)</option><option value="0" ${cfg.testnet?"":"selected"}>Live (real funds)</option></select>
+  <label for="iv">Hours between buys</label><input id="iv" type="number" min="4" value="${cfg.interval_h}">
+  <label for="mx">Largest manual trade (USD)</label><input id="mx" type="number" min="1" value="${cfg.max_manual_usd}">
+  <label class="row" style="color:var(--ink)">Pause buying on scary exchange news<input id="ng" type="checkbox" ${cfg.news_guard?"checked":""}></label>
+  <label class="row" style="color:var(--ink)">Use the Fear and Greed index<input id="fg" type="checkbox" ${cfg.use_fng?"checked":""}></label>
+  <details><summary>Strategy numbers</summary>${Object.keys(PAR).map(k=>`<label for="p_${k}">${PAR[k]}</label><input id="p_${k}" data-k="${k}" class="pp" type="number" step="0.05" value="${cfg.params[k]??PD[k]}">`).join("")}</details>
+  <button class="full" id="sv" ${dirty?"":"disabled"}>Save settings</button>
+  <h2>This browser</h2><button class="ghost" id="lo">Disconnect and forget the token</button>`;
+  const d=()=>{dirty=true;$("#sv").disabled=false};
+  [["ex","exchange"],["dx","data_exchange"]].forEach(([i,k])=>$("#"+i).onchange=e=>{cfg[k]=e.target.value;d()});
+  $("#md").onchange=e=>{if(e.target.value==="0"){if(prompt("Live mode uses real money. Type LIVE to confirm.")!=="LIVE"){e.target.value="1";return}}cfg.testnet=e.target.value==="1";d()};
+  $("#iv").oninput=e=>{cfg.interval_h=Math.max(4,+e.target.value||24);d()};$("#mx").oninput=e=>{cfg.max_manual_usd=Math.max(1,+e.target.value||100);d()};
+  $("#ng").onchange=e=>{cfg.news_guard=e.target.checked;d()};$("#fg").onchange=e=>{cfg.use_fng=e.target.checked;d()};
+  document.querySelectorAll(".pp").forEach(e=>e.oninput=()=>{cfg.params[e.dataset.k]=+e.value;d()});
+  $("#sv").onclick=saveCfg;$("#lo").onclick=()=>{localStorage.removeItem("token");S.token="";cfg=null;render()};
+}
+(async()=>{if(S.token&&await load())render();else connect()})();
+</script>
+</body>
+</html>
