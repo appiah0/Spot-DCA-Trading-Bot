@@ -123,7 +123,8 @@ def main():
             st["cost"] += spent
             st["qty"] += o.get("filled") or q
             st["last_buy"] = now
-        print(f"BUY ~${spend:.2f} (x{m}) {q} {sym}; pool left ${st['pool'] - (spend if live else 0):.2f}")
+        left = st["pool"] if live else st["pool"] - spend
+        print(f"BUY ~${spend:.2f} (x{m}) {q} {sym}; pool left ${left:.2f}")
     else:
         print(f"No buy (multiplier={m}, pool=${st['pool']:.2f}, hours since last buy={hrs:.1f})")
     save(st, live)
