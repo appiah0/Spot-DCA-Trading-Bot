@@ -33,7 +33,7 @@ def main():
         print("No API keys: DRY RUN (logging only)")
 
     # ---- SELL (only coins this bot bought) ----
-    if should_sell(price, st["qty"], st["cost"]) and (now - st["last_sell"]) / 3600 >= CFG["sell_cooldown_h"]:
+    if should_sell(price, st["qty"], st["cost"], r) and (now - st["last_sell"]) / 3600 >= CFG["sell_cooldown_h"]:
         q = st["qty"] * CFG["tp_frac"]
         if live:
             q = float(ex.amount_to_precision(sym, q))

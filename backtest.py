@@ -26,7 +26,7 @@ def run(df, smart):
                 invested += spend
                 last_buy = r["ts"]
                 n_buys += 1
-        if smart and (r["ts"] - last_sell) / 3.6e6 >= CFG["sell_cooldown_h"] and should_sell(px, qty, cost):
+        if smart and (r["ts"] - last_sell) / 3.6e6 >= CFG["sell_cooldown_h"] and should_sell(px, qty, cost, r):
             sq = qty * CFG["tp_frac"]
             proceeds += sq * px * (1 - slip) * (1 - fee)
             cost -= cost * CFG["tp_frac"]
